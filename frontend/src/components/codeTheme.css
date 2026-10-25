@@ -1,0 +1,118 @@
+/* ============================================================
+   CODE THEME: change any colour here and every code block updates
+   ============================================================ */
+:root {
+  /* Code block surfaces */
+  --code-bg: #16122e;              /* background of the whole code block (deep violet) */
+  --code-header-bg: rgba(139, 92, 246, 0.18); /* top bar with language + Copy (violet) */
+  --code-border: rgba(167, 139, 250, 0.25);
+  --code-linenum: rgba(196, 181, 253, 0.45); /* line numbers on the left */
+
+  /* Token colours */
+  --code-text: #e6e6e6;            /* normal text, variables */
+  --code-keyword: #c792ea;         /* let, const, if, function, return */
+  --code-string: #9be3a8;          /* "text", 'text', `text` */
+  --code-number: #f9a26c;          /* 7, 3.14, true, false, null */
+  --code-function: #82aaff;        /* function and method names */
+  --code-class: #ffd479;           /* class names, types */
+  --code-attr: #ffcb6b;            /* object keys, html attributes, css properties */
+  --code-tag: #f07178;             /* html tags, css selectors */
+  --code-operator: #89ddff;        /* = + - === => { } ( ) */
+  --code-comment: #8b7fb8;         /* // comments */
+
+  /* Small highlighted words inside normal text (like `new`, `prototype`) */
+  --inline-code-color: #e9a8ff;    /* text colour of those words (pinkish violet) */
+  --inline-code-bg: rgba(233, 168, 255, 0.12); /* their small background */
+}
+
+.inline-code {
+  color: var(--inline-code-color);
+  background: var(--inline-code-bg);
+}
+
+/* Base */
+.hljs {
+  color: var(--code-text);
+  background: transparent;
+}
+
+/* Keywords: let, const, if, else, return, import */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag,
+.hljs-meta .hljs-keyword {
+  color: var(--code-keyword);
+}
+
+/* Strings */
+.hljs-string,
+.hljs-regexp,
+.hljs-template-tag,
+.hljs-addition {
+  color: var(--code-string);
+}
+
+/* Numbers and constants */
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--code-number);
+}
+
+/* Functions and built-ins: console.log, Number(), prompt() */
+.hljs-built_in,
+.hljs-title.function_,
+.hljs-title,
+.hljs-section {
+  color: var(--code-function);
+}
+
+/* Classes and types */
+.hljs-title.class_,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: var(--code-class);
+}
+
+/* Object keys, attributes, properties */
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--code-attr);
+}
+
+/* HTML tags, CSS selectors */
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-deletion {
+  color: var(--code-tag);
+}
+
+/* Operators and punctuation */
+.hljs-operator,
+.hljs-punctuation {
+  color: var(--code-operator);
+}
+
+/* Variables, function parameters, template substitutions */
+.hljs-variable,
+.hljs-params,
+.hljs-subst,
+.hljs-template-variable {
+  color: var(--code-text);
+}
+
+/* Comments */
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
