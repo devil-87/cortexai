@@ -55,6 +55,7 @@ Format:
 {
   "title": "",
   "subtitle": "",
+  "theme": "ONE of: aurora, ocean, sunset, emerald, midnight, berry (pick the one that suits the topic: sports -> ocean or sunset, tech -> aurora or midnight, nature -> emerald, culture -> berry)",
   "personName": "exact English Wikipedia article title if the topic is a real person (e.g. Virat Kohli), otherwise null",
   "imageTopic": "ONE lowercase word for the general field, e.g. cricket, space, medicine",
   "imageQuery": "2-3 word photo search for the cover",
@@ -99,8 +100,6 @@ ${research.text || "(no research available - keep claims general and avoid speci
         if (!Array.isArray(data.slides) || data.slides.length === 0) {
             throw new Error("LLM returned no slides");
         }
-
-        data.theme = "emerald"; // green theme
 
         await attachImages(data); // photos for cover + slides
 
