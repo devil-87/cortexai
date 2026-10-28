@@ -2,6 +2,7 @@ import { getModel } from "../config/llmModels.js"
 import axios from "axios"
 import { uploadToS3 } from "../utils/uploadToS3.js"
 import { getFromS3 } from "../utils/getFromS3.js"
+import { deductCredits } from "../utils/deductCredits.js"
 
 const BASE_URL = "https://gen.pollinations.ai/image"
 const MODELS = ["flux"]
@@ -80,6 +81,12 @@ const extensionFor = (contentType) => {
 }
 
 export const visionAgent = async (state) => {
+    // CHANGED: key is "vision" (matches the COST table in the auth service)
+    // and the new balance is saved in `credits`.
+    // This stays OUTSIDE the try/catch below, so a 402 "Not enough credits"
+    // error reaches the controller instead of being swallowed.
+    const { credits } = await deductCredits(state.userId, "vision")
+
     try {
         if (!process.env.POLLINATIONS_API_KEY) {
             console.warn("POLLINATIONS_API_KEY is not set - image requests may fail with 402")
@@ -124,6 +131,7 @@ ${state.prompt}
 
         return {
             ...state,
+            credits,   // ADDED
             aiResponse: `
 # 🖼️ Image Generated Successfully
 
@@ -146,6 +154,7 @@ ${state.prompt}
 
         return {
             ...state,
+            credits,   // ADDED: credits were already spent, so the screen must show the new balance
             aiResponse: `❌ Failed to generate image: ${reason}`
         }
     }

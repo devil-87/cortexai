@@ -12,9 +12,11 @@ import {
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import sendMessage from "../features/sendMessage.js";
+import getCurrentUser from "../features/getCurrentUser.js"; // ADDED
 import { createConversation } from "../features/createConversation.js";
 import { useDispatch, useSelector } from "react-redux";
 import { addMessage, setMessages, setArtifacts } from "../redux/messageSlice.js";
+import { setCredits, setUserdata } from "../redux/userSlice.js"; // ADDED
 import {
   addConversation,
   setSelectedConversation,
@@ -77,6 +79,13 @@ const ChatInput = () => {
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
 
+  // ADDED: reload the user from the server (used when a request failed after
+  // credits may already have been spent, so the screen shows the real balance)
+  const refreshUser = async () => {
+    const user = await getCurrentUser();
+    if (user) dispatch(setUserdata(user));
+  };
+
   const handleSendMessage = async () => {
     if (!canSend) return;
 
@@ -137,9 +146,13 @@ const ChatInput = () => {
       console.log("sendMessage response:", data);
 
       // 4. Show the AI reply with its images and artifacts
-      const reply = data?.error
-        ? `Error: ${data.error}`
-        : extractReply(data);
+      // CHANGED: 402 means the user has no credits left
+      const reply =
+        data?.status === 402
+          ? "You are out of credits. Click the coin icon in the sidebar to open Billing and add more."
+          : data?.error
+          ? `Error: ${data.error}`
+          : extractReply(data);
       const images = extractImages(data);
       const artifacts = extractArtifacts(data);
 
@@ -163,6 +176,15 @@ const ChatInput = () => {
         dispatch(
           updateConversationTitle({ id: conversationId, title: data.title }),
         );
+      }
+
+      // 6. ADDED: update the credits on screen, no page refresh needed
+      if (data?.credits !== undefined) {
+        // normal case: the backend sent the new balance
+        dispatch(setCredits(data.credits));
+      } else if (data?.error && data.status !== 402) {
+        // the request failed, but credits may already have been spent: reload them
+        refreshUser();
       }
     } catch (err) {
       console.error("Failed to send message:", err);

@@ -8,7 +8,8 @@ const sendMessage = async (payload) => {
         const message =
             error.response?.data?.message || error.message || "Something went wrong"
         console.error("sendMessage failed:", error.response?.status, message)
-        return { error: message }
+        // CHANGED: also return the status, so the UI can detect 402 (not enough credits)
+        return { error: message, status: error.response?.status }
     }
 }
 

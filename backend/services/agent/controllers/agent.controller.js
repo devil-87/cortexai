@@ -8,6 +8,14 @@ export const agent=async (req,res) => {
     try {
         const {prompt,conversationId,isFirstMessage,agent}=req.body
 
+        // [userId 1/3] read the id the gateway attached after verifying the token.
+        // It comes from the header, not req.body, so a client cannot fake it.
+        const userId=req.headers["x-user-id"]
+
+        // [userId 2/3] stop early if the gateway did not send it
+        if(!userId){
+            return res.status(401).json({message:"Missing user id"})
+        }
 
         await axios.post(`${process.env.CHAT_SERVICE}/save-message`,{
             conversationId,role:"user",content:prompt
@@ -16,7 +24,8 @@ export const agent=async (req,res) => {
         // the title is written at the same time as the answer, so it adds no waiting time
         const [result,title]=await Promise.all([
             graph.invoke({
-                prompt,conversationId,agent
+                // [userId 3/3] pass it into the graph so every node can read state.userId
+                prompt,conversationId,agent,userId
             }),
             isFirstMessage ? generateTitle(prompt) : null
         ])
@@ -49,9 +58,14 @@ export const agent=async (req,res) => {
             }
         }
 
-        return res.status(200).json({response,title,images,artifacts})
+        // credits = the new balance, so the frontend can update the screen without a refresh
+        return res.status(200).json({response,title,images,artifacts,credits:result.credits})
         
     } catch (error) {
+        // not enough credits: tell the frontend with 402 so it can open the Billing drawer
+        if(error.status===402){
+            return res.status(402).json({message:"Not enough credits"})
+        }
         console.error("agent controller error:",error)
         return res.status(500).json({message:`agent error ${error}`})
     }

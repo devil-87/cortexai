@@ -1,5 +1,6 @@
 import { getModel } from "../config/llmModels.js"
 import { searchUnsplashImages, trackUnsplashDownloads } from "../config/unsplash.js"
+import { deductCredits } from "../utils/deductCredits.js"   // ADDED
 
 const getText = (content) =>
     typeof content === "string"
@@ -210,6 +211,11 @@ export const codingAgent=async (state) => {
     if(intent.includes("CODE_GENERATION")){
         // CHANGED: title is built from the prompt (no AI call)
         const title = buildTitle(state.prompt)
+
+        // ADDED (1/2): charge credits before the expensive steps.
+        // Throws a 402 error if the user has no credits, so nothing below runs.
+        const { credits } = await deductCredits(state.userId, "coding")
+
         const imageGroups = await getUnsplashImages(state.prompt)
 
         const prompt = `
@@ -272,6 +278,7 @@ ${state.prompt}
 
         return {
             ...state,
+            credits,
             aiResponse: "Code Generated Successfully.",
             artifacts:[
                 {
@@ -283,6 +290,9 @@ ${state.prompt}
             ]
         }
     }
+
+    // ADDED (2/2): same charge for review / explain / debug / optimize / convert / docs
+    const { credits } = await deductCredits(state.userId, "coding")
 
     const res = await llm.invoke(`
     The user's request type is:
@@ -313,6 +323,7 @@ ${state.prompt}
 
     return {
         ...state,
+        credits,
         aiResponse: getText(res.content),
         artifacts:[]
     }

@@ -1,6 +1,7 @@
 import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages"
 import { getModel } from "../config/llmModels.js"
 import { getMemory } from "../config/memory.js"
+import { deductCredits } from "../utils/deductCredits.js"
 
 // ---------- Prompts ----------
 
@@ -117,6 +118,18 @@ const toText = (content) =>
 // ---------- Agent ----------
 
 export const chatAgent = async (state) => {
+    // CHANGED: charge BEFORE the LLM call (it was after), so a user with no
+    // credits is blocked before any model cost is spent.
+    // The search agent already charged for this request when it ran, and it always
+    // sets state.searchResults (even to [] on failure), so skip the charge then.
+    // No try/catch here on purpose: the 402 error must reach the controller.
+    // `credits` keeps the balance the search agent already set, or the new one from here.
+    let credits = state.credits
+    if (state.searchResults === undefined) {
+        const result = await deductCredits(state.userId, "chat")
+        credits = result.credits
+    }
+
     const llm = await getModel("chat")
     const history = await getMemory(state.conversationId)
 
@@ -138,6 +151,7 @@ export const chatAgent = async (state) => {
 
     return {
         ...state,
+        credits,
         aiResponse: toText(response.content),
     }
 }
