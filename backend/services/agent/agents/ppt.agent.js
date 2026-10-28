@@ -4,6 +4,7 @@ import { uploadToS3 } from "../utils/uploadToS3.js";
 import { getFromS3 } from "../utils/getFromS3.js";
 import { attachImages } from "../utils/fetchImages.js";
 import { researchTopic } from "../utils/researchTopic.js";
+import { deductCredits } from "../utils/deductCredits.js"; // ADDED
 
 const PPT_MIME =
     "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -35,6 +36,12 @@ const parseJson = (raw) => {
 };
 
 export const pptAgent = async (state) => {
+    // ADDED: charge credits OUTSIDE the try/catch below, so a 402
+    // "Not enough credits" error reaches the controller instead of being
+    // swallowed and shown as "Failed to generate PPT".
+    // The new balance is saved in `credits` and returned in the state.
+    const { credits } = await deductCredits(state.userId, "ppt");
+
     try {
         const llm = await getModel("ppt");
 
@@ -117,6 +124,7 @@ ${research.text || "(no research available - keep claims general and avoid speci
 
         return {
             ...state,
+            credits,
             aiResponse: `# ✅ Presentation Generated
 
 **${data.title}**
@@ -129,6 +137,7 @@ _Link expires in 24 hours._`,
         console.error("PPT agent error:", error);
         return {
             ...state,
+            credits, // credits were already spent, so the screen must show the new balance
             aiResponse: "Failed to generate PPT..",
         };
     }

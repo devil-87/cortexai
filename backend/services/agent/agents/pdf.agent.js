@@ -2,6 +2,7 @@ import { getModel } from "../config/llmModels.js"
 import { generatePdf } from "../utils/generatePdf.js"
 import { uploadToS3 } from "../utils/uploadToS3.js"
 import { getFromS3 } from "../utils/getFromS3.js"
+import { deductCredits } from "../utils/deductCredits.js"   // ADDED
 
 const getText = (content) =>
     typeof content === "string"
@@ -32,6 +33,12 @@ const normalizeDoc = (data, prompt) => ({
 })
 
 export const pdfAgent=async (state) => {
+    // ADDED: charge credits OUTSIDE the try/catch below.
+    // If it were inside, the catch would swallow the 402 "Not enough credits"
+    // error and the user would only see "Failed to generate PDF".
+    // The new balance is saved in `credits` and returned in the state.
+    const { credits } = await deductCredits(state.userId, "pdf")
+
     try {
         const llm=await getModel("pdf")
         const prompt=`
@@ -81,6 +88,7 @@ ${state.prompt}
 
         return {
             ...state,
+            credits,
             aiResponse:`# PDF Generated
 
 **${data.title}**
@@ -93,6 +101,7 @@ _Link expires in 10 minutes._`
         console.log("pdf agent error:", error)
         return {
             ...state,
+            credits, // credits were already spent, so the screen must show the new balance
             aiResponse:"Failed to generate PDF. Please try again."
         }
     }

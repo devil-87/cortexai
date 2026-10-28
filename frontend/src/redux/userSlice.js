@@ -11,8 +11,12 @@ const userSlice = createSlice({
       state.userData = action.payload;
       state.loading = false;
     },
+    // ADDED: update only the credits, so the Billing drawer changes without a refresh
+    setCredits: (state, action) => {
+      if (state.userData) state.userData.credits = action.payload;
+    },
   },
 });
 
-export const { setUserdata } = userSlice.actions;
+export const { setUserdata, setCredits } = userSlice.actions;
 export default userSlice.reducer;
