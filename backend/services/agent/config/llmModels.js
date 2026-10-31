@@ -14,6 +14,12 @@ const gemini=new ChatGoogleGenerativeAI({
     model:"gemini-flash-latest"
 })
 
+// for imageanalyzer only i use this 
+const geminiImageAnalyzer=new ChatGoogleGenerativeAI({
+    model:"gemini-3.7-flash",
+    temperature:0
+})
+
 const openrouter = new ChatOpenRouter({
   model: "deepseek/deepseek-chat",
   temperature: 0,
@@ -32,6 +38,8 @@ export const getModel=async (agent)=>{
             return groq;
         case "coding":
             return gemini;
+        case "imageAnalyzer":
+            return geminiImageAnalyzer;
         case "pdf":
             return groq;
         default:

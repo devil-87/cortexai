@@ -8,6 +8,9 @@ export const agent=async (req,res) => {
     try {
         const {prompt,conversationId,isFirstMessage,agent}=req.body
 
+        // the uploaded file (set by multer). It is undefined when the user sends no file.
+        const file=req.file
+
         // [userId 1/3] read the id the gateway attached after verifying the token.
         // It comes from the header, not req.body, so a client cannot fake it.
         const userId=req.headers["x-user-id"]
@@ -17,6 +20,10 @@ export const agent=async (req,res) => {
             return res.status(401).json({message:"Missing user id"})
         }
 
+        // with FormData every body value is a string, so "false" would count as true.
+        // This accepts both the string "true" (file upload) and the boolean true (JSON request).
+        const shouldMakeTitle=isFirstMessage==="true" || isFirstMessage===true
+
         await axios.post(`${process.env.CHAT_SERVICE}/save-message`,{
             conversationId,role:"user",content:prompt
         })
@@ -25,9 +32,10 @@ export const agent=async (req,res) => {
         const [result,title]=await Promise.all([
             graph.invoke({
                 // [userId 3/3] pass it into the graph so every node can read state.userId
-                prompt,conversationId,agent,userId
+                // file is passed in the same way so the agents can read the upload
+                prompt,conversationId,agent,userId,file
             }),
-            isFirstMessage ? generateTitle(prompt) : null
+            shouldMakeTitle ? generateTitle(prompt) : null
         ])
         const response=result.aiResponse
 

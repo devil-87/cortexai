@@ -1,13 +1,20 @@
+import crypto from "node:crypto"
 import { getModel } from "../config/llmModels.js"
 import { generatePdf } from "../utils/generatePdf.js"
 import { uploadToS3 } from "../utils/uploadToS3.js"
 import { getFromS3 } from "../utils/getFromS3.js"
-import { deductCredits } from "../utils/deductCredits.js"   // ADDED
+import { deductCredits } from "../utils/deductCredits.js"
+
+// FIXED: the download link used to last only 10 minutes (60*10), so any PDF opened later
+// from the chat history showed "AccessDenied - Request has expired".
+// Now it lasts 24 hours, the same as the image links. The maximum S3 allows is 7 days.
+const LINK_SECONDS = 60 * 60 * 24
 
 const getText = (content) =>
     typeof content === "string"
         ? content
-        : content.map((part) => part.text ?? "").join("")
+        // FIXED: parts can be plain strings too, and part.text would be undefined for them
+        : content.map((part) => (typeof part === "string" ? part : part?.text ?? "")).join("")
 
 // models sometimes wrap JSON in ```json fences or add text around it
 const parseJson = (text) => {
@@ -33,10 +40,9 @@ const normalizeDoc = (data, prompt) => ({
 })
 
 export const pdfAgent=async (state) => {
-    // ADDED: charge credits OUTSIDE the try/catch below.
+    // charge credits OUTSIDE the try/catch below.
     // If it were inside, the catch would swallow the 402 "Not enough credits"
     // error and the user would only see "Failed to generate PDF".
-    // The new balance is saved in `credits` and returned in the state.
     const { credits } = await deductCredits(state.userId, "pdf")
 
     try {
@@ -81,10 +87,14 @@ ${state.prompt}
 
         const pdfBuffer=await generatePdf(data)
 
-        const filename=`pdf-${Date.now()}.pdf`
+        // FIXED: a random part is added, so two requests in the same millisecond cannot overwrite each other
+        const filename=`pdf-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.pdf`
         await uploadToS3(filename,pdfBuffer,"application/pdf")
 
-        const downloadUrl=await getFromS3(filename,60*10)
+        // the third argument makes the link download the file with the document title as its name
+        const downloadUrl=await getFromS3(filename, LINK_SECONDS, `${data.title}.pdf`)
+
+        const hours = Math.round(LINK_SECONDS / 3600)
 
         return {
             ...state,
@@ -95,7 +105,7 @@ ${state.prompt}
 
 📥 [Download PDF](${downloadUrl})
 
-_Link expires in 10 minutes._`
+_Link expires in ${hours} hours._`
         }
     } catch (error) {
         console.log("pdf agent error:", error)

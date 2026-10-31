@@ -9,5 +9,6 @@ export const agentState=Annotation.Root({
     images:Annotation(),
     artifacts:Annotation(),
     userId:Annotation(),
-    credits:Annotation()   // ADDED: new credit balance after an agent charges the user
+    credits:Annotation(),
+    file:Annotation()
 })
