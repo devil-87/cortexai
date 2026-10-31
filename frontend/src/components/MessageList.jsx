@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { useSelector } from "react-redux";
 import MessageBubble from "./MessageBubble";
+import Loading from "./Loading.jsx"; // ADDED
 
 const suggestions = ["Write a Netflix clone", "Explain Redis", "Build a dashboard"];
 
@@ -10,10 +11,17 @@ const MessageList = () => {
 
   const isEmpty = !messages || messages.length === 0;
 
-  // Scroll to the newest message whenever one is added
+  // ADDED: the user just sent a message and the AI has not answered yet.
+  // Only freshly sent messages (temp ids) count, so an old chat whose last
+  // message is from the user never shows the loader forever.
+  const lastMessage = messages?.[messages.length - 1];
+  const isWaiting =
+    lastMessage?.role === "user" && lastMessage?._id?.startsWith("temp-user");
+
+  // Scroll to the newest message, or to the loader, whenever either appears
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages?.length]);
+  }, [messages?.length, isWaiting]);
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-4 sm:py-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -53,6 +61,12 @@ const MessageList = () => {
               images={msg?.images}
             />
           ))}
+
+          {/* ADDED: three bouncing dots + topic words until the reply arrives */}
+          {isWaiting && (
+            <Loading agent={lastMessage.agent} prompt={lastMessage.content} />
+          )}
+
           <div ref={bottomRef} />
         </div>
       )}

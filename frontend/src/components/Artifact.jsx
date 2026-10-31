@@ -16,6 +16,7 @@ import CodeViewer from './CodeViewer'
 
 const OPEN_WIDTH = 350
 const CLOSED_WIDTH = 48
+const DESKTOP_QUERY = '(min-width: 1024px)' // Tailwind "lg"
 
 // merge index.html + style.css + script.js into one page for the preview iframe
 const buildPreview = (files) => {
@@ -40,12 +41,33 @@ const buildPreview = (files) => {
   return doc
 }
 
+// true on desktop (>= 1024px), false on mobile / tablet
+const useIsDesktop = () => {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window === 'undefined'
+      ? true
+      : window.matchMedia(DESKTOP_QUERY).matches,
+  )
+
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_QUERY)
+    const onChange = (e) => setIsDesktop(e.matches)
+    setIsDesktop(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  return isDesktop
+}
+
 const Artifact = () => {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(false) // desktop only
+  const [mobileOpen, setMobileOpen] = useState(false) // mobile only
   const [tab, setTab] = useState('code') // 'code' | 'preview'
   const [activeFile, setActiveFile] = useState(0)
   const [copied, setCopied] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
+  const isDesktop = useIsDesktop()
   const { artifacts } = useSelector((state) => state.message)
 
   // show the most recent artifact
@@ -63,15 +85,32 @@ const Artifact = () => {
     setActiveFile(0)
   }, [latest?.id])
 
-  // Escape closes the full screen preview
+  // switching between mobile and desktop resets the other mode's state
   useEffect(() => {
-    if (!fullscreen) return
+    if (isDesktop) setMobileOpen(false)
+  }, [isDesktop])
+
+  // Escape closes the full screen preview / the mobile sheet,
+  // and the page behind the mobile sheet / full screen does not scroll
+  useEffect(() => {
+    const overlayOpen = fullscreen || (mobileOpen && !isDesktop)
+    if (!overlayOpen) return
+
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
     const onKeyDown = (e) => {
-      if (e.key === 'Escape') setFullscreen(false)
+      if (e.key !== 'Escape') return
+      if (fullscreen) setFullscreen(false)
+      else setMobileOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [fullscreen])
+
+    return () => {
+      document.body.style.overflow = prevOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [fullscreen, mobileOpen, isDesktop])
 
   // nothing generated yet: show no panel (all hooks are above this line)
   if (!Array.isArray(artifacts) || artifacts.length === 0) return null
@@ -93,163 +132,210 @@ const Artifact = () => {
         : 'bg-transparent text-slate-500 hover:text-slate-200'
     }`
 
+  // ---------- shared panel body: used by the desktop panel AND the mobile sheet ----------
+  // (called as a function, not <PanelContent/>, so the iframe is never remounted)
+  const panelContent = () => (
+    <div className='flex flex-col h-full w-full bg-[#0d0f14]'>
+      {/* Header: close/collapse + icon + title + copy + Code/Preview toggle */}
+      <div className='h-14 px-3 border-b border-white/[0.06] flex items-center gap-2 shrink-0'>
+        {isDesktop ? (
+          <button
+            type='button'
+            aria-label='Close artifact panel'
+            className='flex items-center justify-center w-7 h-7 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.05] transition-colors duration-150 bg-transparent border-none cursor-pointer shrink-0'
+            onClick={() => setCollapsed(true)}
+          >
+            <PanelRightClose size={16} />
+          </button>
+        ) : (
+          <button
+            type='button'
+            aria-label='Close code view'
+            className='flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/[0.08] transition-colors duration-150 bg-transparent border-none cursor-pointer shrink-0'
+            onClick={() => setMobileOpen(false)}
+          >
+            <X size={18} />
+          </button>
+        )}
+
+        <div className='flex items-center gap-2 flex-1 min-w-0'>
+          <div className='flex items-center justify-center w-6 h-6 rounded-md bg-indigo-500/10 border border-indigo-500/20 shrink-0'>
+            <Code2 className='text-indigo-400' size={12} />
+          </div>
+          <div
+            title={title}
+            className='text-[13px] font-medium text-slate-200 truncate'
+          >
+            {title}
+          </div>
+        </div>
+
+        <button
+          type='button'
+          aria-label='Copy code'
+          title={currentFile ? `Copy ${currentFile.name}` : 'Copy'}
+          onClick={handleCopy}
+          className='flex items-center justify-center w-8 h-8 text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] rounded-lg transition-colors duration-150 bg-transparent border-none cursor-pointer shrink-0'
+        >
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+        </button>
+
+        <div className='flex items-center gap-1 bg-white/[0.04] border border-white/[0.06] p-1 rounded-lg shrink-0'>
+          <button
+            type='button'
+            onClick={() => setTab('code')}
+            className={toggleClass(tab === 'code')}
+          >
+            <Code2 size={11} /> Code
+          </button>
+          <button
+            type='button'
+            onClick={() => setTab('preview')}
+            className={toggleClass(tab === 'preview')}
+          >
+            <Eye size={11} /> Preview
+          </button>
+        </div>
+      </div>
+
+      {/* File tabs (Code view only) */}
+      {tab === 'code' && (
+        <div className='flex border-b border-white/[0.06] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0'>
+          {files.map((f, index) => (
+            <button
+              key={f.name}
+              type='button'
+              onClick={() => setActiveFile(index)}
+              className={`px-4 py-2.5 text-[11px] font-medium whitespace-nowrap transition-colors duration-150 border-r border-white/[0.05] relative cursor-pointer bg-transparent ${
+                activeFile === index
+                  ? 'text-indigo-400'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {f.name}
+              {activeFile === index && (
+                <div className='absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-500 rounded-t-full' />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Preview bar (Preview view only). Full screen is desktop-only,
+          because on mobile the sheet is already full screen. */}
+      {tab === 'preview' && (
+        <div className='h-9 px-3 border-b border-white/[0.06] flex items-center justify-between shrink-0'>
+          <span className='text-[11px] text-slate-500'>Live preview</span>
+          {isDesktop && (
+            <button
+              type='button'
+              onClick={() => setFullscreen(true)}
+              className='flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] rounded-md transition-colors duration-150 bg-transparent border-none cursor-pointer'
+            >
+              <Maximize2 size={12} /> Full screen
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Content */}
+      <div className='flex-1 min-h-0 min-w-0 overflow-hidden'>
+        {tab === 'code' ? (
+          currentFile ? (
+            <CodeViewer
+              fileName={currentFile.name}
+              code={currentFile.content || ''}
+            />
+          ) : (
+            <div className='p-4 text-[12px] text-slate-500'>No files.</div>
+          )
+        ) : (
+          <iframe
+            title='Preview'
+            sandbox='allow-scripts'
+            srcDoc={previewDoc}
+            className='w-full h-full bg-white border-none'
+          />
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <>
-      <motion.div
-        initial={{ width: OPEN_WIDTH }}
-        animate={{ width: collapsed ? CLOSED_WIDTH : OPEN_WIDTH }}
-        transition={{ duration: 0.25, ease: 'easeInOut' }}
-        className='hidden lg:flex h-full border-l border-white/[0.06] flex-col overflow-hidden shrink-0'
-      >
-        {!collapsed ? (
-          // ---------- EXPANDED ----------
-          <div
-            className='flex flex-col h-full bg-[#0d0f14] shrink-0'
-            style={{ width: OPEN_WIDTH }}
-          >
-            {/* Header: collapse + icon + title + copy + Code/Preview toggle */}
-            <div className='h-14 px-3 border-b border-white/[0.06] flex items-center gap-2 shrink-0'>
+      {/* ================= DESKTOP: side panel that can collapse ================= */}
+      {isDesktop && (
+        <motion.div
+          initial={{ width: OPEN_WIDTH }}
+          animate={{ width: collapsed ? CLOSED_WIDTH : OPEN_WIDTH }}
+          transition={{ duration: 0.25, ease: 'easeInOut' }}
+          className='flex h-full border-l border-white/[0.06] flex-col overflow-hidden shrink-0'
+        >
+          {!collapsed ? (
+            // fixed inner width so the content does not squish while animating
+            <div className='h-full shrink-0' style={{ width: OPEN_WIDTH }}>
+              {panelContent()}
+            </div>
+          ) : (
+            // COLLAPSED: icon button + vertical title
+            <div className='flex flex-col items-center w-full h-full bg-[#0d0f14] py-4 gap-3'>
               <button
                 type='button'
-                aria-label='Close artifact panel'
+                aria-label='Open artifact panel'
                 className='flex items-center justify-center w-7 h-7 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.05] transition-colors duration-150 bg-transparent border-none cursor-pointer shrink-0'
-                onClick={() => setCollapsed(true)}
+                onClick={() => setCollapsed(false)}
               >
-                <PanelRightClose size={16} />
+                <PanelRightOpen size={16} />
               </button>
 
-              <div className='flex items-center gap-2 flex-1 min-w-0'>
-                <div className='flex items-center justify-center w-6 h-6 rounded-md bg-indigo-500/10 border border-indigo-500/20 shrink-0'>
-                  <Code2 className='text-indigo-400' size={12} />
-                </div>
+              <div className='flex-1 min-h-0 overflow-hidden'>
                 <div
                   title={title}
-                  className='text-[13px] font-medium text-slate-200 truncate'
+                  className='max-h-full overflow-hidden text-ellipsis text-[10px] font-medium text-slate-600 tracking-widest uppercase whitespace-nowrap'
+                  style={{
+                    writingMode: 'vertical-lr',
+                    transform: 'rotate(180deg)',
+                  }}
                 >
                   {title}
                 </div>
               </div>
-
-              <div className='flex items-center gap-1 shrink-0'>
-                <button
-                  type='button'
-                  aria-label='Copy code'
-                  title={currentFile ? `Copy ${currentFile.name}` : 'Copy'}
-                  onClick={handleCopy}
-                  className='flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] rounded-lg transition-colors duration-150 bg-transparent border-none cursor-pointer'
-                >
-                  {copied ? <Check size={15} /> : <Copy size={15} />}
-                </button>
-              </div>
-
-              <div className='flex items-center gap-1 bg-white/[0.04] border border-white/[0.06] p-1 rounded-lg shrink-0'>
-                <button
-                  type='button'
-                  onClick={() => setTab('code')}
-                  className={toggleClass(tab === 'code')}
-                >
-                  <Code2 size={11} /> Code
-                </button>
-                <button
-                  type='button'
-                  onClick={() => setTab('preview')}
-                  className={toggleClass(tab === 'preview')}
-                >
-                  <Eye size={11} /> Preview
-                </button>
-              </div>
             </div>
+          )}
+        </motion.div>
+      )}
 
-            {/* File tabs (Code view only) */}
-            {tab === 'code' && (
-              <div className='flex border-b border-white/[0.06] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden shrink-0'>
-                {files.map((f, index) => (
-                  <button
-                    key={f.name}
-                    type='button'
-                    onClick={() => setActiveFile(index)}
-                    className={`px-4 py-2.5 text-[11px] font-medium whitespace-nowrap transition-colors duration-150 border-r border-white/[0.05] relative cursor-pointer bg-transparent ${
-                      activeFile === index
-                        ? 'text-indigo-400'
-                        : 'text-slate-500 hover:text-slate-300'
-                    }`}
-                  >
-                    {f.name}
-                    {activeFile === index && (
-                      <div className='absolute bottom-0 left-0 right-0 h-[2px] bg-indigo-500 rounded-t-full' />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
+      {/* ================= MOBILE: floating button + full screen sheet ================= */}
+      {!isDesktop && !mobileOpen && (
+        <button
+          type='button'
+          aria-label='View generated code'
+          onClick={() => setMobileOpen(true)}
+          className='fixed top-3 right-3 z-30 flex items-center gap-1.5 h-9 px-3 rounded-lg bg-[#0d0f14] border border-indigo-500/30 text-[12px] font-medium text-indigo-300 hover:text-indigo-200 transition-colors duration-150 cursor-pointer'
+        >
+          <Code2 size={14} />
+          Code
+        </button>
+      )}
 
-            {/* Preview bar with the Full screen button (Preview view only) */}
-            {tab === 'preview' && (
-              <div className='h-9 px-3 border-b border-white/[0.06] flex items-center justify-between shrink-0'>
-                <span className='text-[11px] text-slate-500'>Live preview</span>
-                <button
-                  type='button'
-                  onClick={() => setFullscreen(true)}
-                  className='flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] rounded-md transition-colors duration-150 bg-transparent border-none cursor-pointer'
-                >
-                  <Maximize2 size={12} /> Full screen
-                </button>
-              </div>
-            )}
-
-            {/* Content */}
-            <div className='flex-1 min-h-0'>
-              {tab === 'code' ? (
-                currentFile ? (
-                  <CodeViewer
-                    fileName={currentFile.name}
-                    code={currentFile.content || ''}
-                  />
-                ) : (
-                  <div className='p-4 text-[12px] text-slate-500'>No files.</div>
-                )
-              ) : (
-                <iframe
-                  title='Preview'
-                  sandbox='allow-scripts'
-                  srcDoc={previewDoc}
-                  className='w-full h-full bg-white border-none'
-                />
-              )}
-            </div>
-          </div>
-        ) : (
-          // ---------- COLLAPSED: icon button + vertical title ----------
-          <div className='flex flex-col items-center w-full h-full bg-[#0d0f14] py-4 gap-3'>
-            <button
-              type='button'
-              aria-label='Open artifact panel'
-              className='flex items-center justify-center w-7 h-7 rounded-lg text-slate-500 hover:text-slate-200 hover:bg-white/[0.05] transition-colors duration-150 bg-transparent border-none cursor-pointer shrink-0'
-              onClick={() => setCollapsed(false)}
-            >
-              <PanelRightOpen size={16} />
-            </button>
-
-            <div className='flex-1 min-h-0 overflow-hidden'>
-              <div
-                title={title}
-                className='max-h-full overflow-hidden text-ellipsis text-[10px] font-medium text-slate-600 tracking-widest uppercase whitespace-nowrap'
-                style={{
-                  writingMode: 'vertical-lr',
-                  transform: 'rotate(180deg)',
-                }}
-              >
-                {title}
-              </div>
-            </div>
-          </div>
+      {!isDesktop &&
+        mobileOpen &&
+        createPortal(
+          <motion.div
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            transition={{ duration: 0.25, ease: 'easeOut' }}
+            className='fixed inset-0 z-50 h-dvh w-full bg-[#0d0f14]'
+          >
+            {panelContent()}
+          </motion.div>,
+          document.body,
         )}
-      </motion.div>
 
-      {/* ---------- FULL SCREEN PREVIEW (drawn on top of the whole page) ---------- */}
+      {/* ================= FULL SCREEN PREVIEW (desktop, drawn on top of the page) ================= */}
       {fullscreen &&
         createPortal(
-          <div className='fixed inset-0 z-50 flex flex-col bg-[#0d0f14]'>
+          <div className='fixed inset-0 z-[60] flex flex-col bg-[#0d0f14]'>
             <div className='h-12 px-4 border-b border-white/[0.06] flex items-center justify-between shrink-0'>
               <div className='flex items-center gap-2 min-w-0'>
                 <div className='flex items-center justify-center w-6 h-6 rounded-md bg-indigo-500/10 border border-indigo-500/20 shrink-0'>

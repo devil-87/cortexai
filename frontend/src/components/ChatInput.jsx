@@ -114,6 +114,7 @@ const ChatInput = () => {
       conversationId: conversation?._id ?? null,
       role: "user",
       content: prompt,
+      agent: selectedAgent.toLowerCase(), // ADDED: lets the loader pick words for this topic
     };
 
     // 1. Show the user's message instantly
@@ -226,9 +227,9 @@ const ChatInput = () => {
 
   return (
     <div className="w-full px-2 sm:px-4 md:px-5 pt-2 sm:pt-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-4 border-t border-white/[0.06] bg-[#0d0f14]">
-      <div className="flex flex-col gap-2 w-full max-w-4xl mx-auto bg-white/[0.03] border border-white/[0.07] rounded-2xl px-3 sm:px-4 pt-2.5 sm:pt-3.5 pb-2 sm:pb-3">
-        {/* Agent pills: one swipeable row on phones, wrap on larger screens */}
-        <div className="flex w-full gap-1.5 sm:gap-2 overflow-x-auto sm:overflow-visible sm:flex-wrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      <div className="flex flex-col gap-2 w-full min-w-0 max-w-4xl mx-auto bg-white/[0.03] border border-white/[0.07] rounded-2xl px-3 sm:px-4 pt-2.5 sm:pt-3.5 pb-2 sm:pb-3">
+        {/* Agent pills: always visible. They wrap onto a second line when the screen is narrow. */}
+        <div className="flex flex-wrap w-full min-w-0 gap-1.5 sm:gap-2">
           {agents.map((agent) => {
             const isActive = selectedAgent === agent.label;
             const Icon = agent.icon;
@@ -237,7 +238,7 @@ const ChatInput = () => {
                 key={agent.id}
                 type="button"
                 onClick={() => setSelectedAgent(agent.label)}
-                className={`shrink-0 cursor-pointer inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-medium border transition-all ${
+                className={`whitespace-nowrap cursor-pointer inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-medium border transition-all ${
                   isActive
                     ? "bg-gradient-to-r from-indigo-500 to-violet-600 text-white border-transparent shadow-[0_1px_8px_rgba(99,102,241,.35)]"
                     : "bg-white/[0.03] text-slate-400 border-white/[0.06] hover:bg-white/[0.07]"
