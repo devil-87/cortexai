@@ -9,6 +9,7 @@ import {
   Presentation,
   Image as ImageIcon,
   Globe,
+  X,
 } from "lucide-react";
 import React, { useEffect, useRef, useState } from "react";
 import sendMessage from "../features/sendMessage.js";
@@ -67,7 +68,8 @@ const ChatInput = () => {
   const dispatch = useDispatch();
   const { selectedConversation } = useSelector((state) => state.conversation);
   const { messages } = useSelector((state) => state.message);
-
+  const [selectedFile, setSelectedFile] = useState(null);
+  const fileRef = useRef(null);
   // No chat needs to be selected: a new one is created automatically
   const canSend = value.trim() && !sending;
 
@@ -84,6 +86,12 @@ const ChatInput = () => {
   const refreshUser = async () => {
     const user = await getCurrentUser();
     if (user) dispatch(setUserdata(user));
+  };
+
+  // ADDED: remove the attached file and reset the hidden input
+  const clearFile = () => {
+    setSelectedFile(null);
+    if (fileRef.current) fileRef.current.value = "";
   };
 
   const handleSendMessage = async () => {
@@ -136,13 +144,17 @@ const ChatInput = () => {
 
     try {
       // 3. Ask the backend
-      const payload = {
-        prompt,
-        conversationId,
-        isFirstMessage,
-        agent: selectedAgent.toLowerCase(),
-      };
-      const data = await sendMessage(payload);
+      // CHANGED: FormData instead of a plain object, so a file can be sent too
+      const formData = new FormData();
+      formData.append("prompt", prompt);
+      formData.append("conversationId", conversationId);
+      formData.append("isFirstMessage", String(isFirstMessage)); // FormData only holds strings
+      formData.append("agent", selectedAgent.toLowerCase());
+      if (selectedFile) {
+        formData.append("file", selectedFile); // only added when a file is attached
+      }
+
+      const data = await sendMessage(formData);
       console.log("sendMessage response:", data);
 
       // 4. Show the AI reply with its images and artifacts
@@ -200,6 +212,7 @@ const ChatInput = () => {
       );
     } finally {
       setSending(false);
+      clearFile(); // CHANGED: the file is used once, then removed
     }
   };
 
@@ -240,6 +253,22 @@ const ChatInput = () => {
           })}
         </div>
 
+        {/* ADDED: shows the attached file so the user knows it will be sent */}
+        {selectedFile && (
+          <div className="inline-flex items-center gap-2 self-start max-w-full px-2.5 py-1 rounded-lg bg-white/[0.05] border border-white/[0.07] text-xs text-slate-300">
+            <Paperclip size={12} className="shrink-0 text-slate-500" />
+            <span className="truncate max-w-[200px]">{selectedFile.name}</span>
+            <button
+              type="button"
+              aria-label="Remove attached file"
+              onClick={clearFile}
+              className="shrink-0 text-slate-500 hover:text-slate-200 bg-transparent border-none cursor-pointer"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
+
         {/* 16px on phones stops iOS from zooming in on focus */}
         <textarea
           ref={textareaRef}
@@ -253,10 +282,23 @@ const ChatInput = () => {
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
+            <input
+              type="file"
+              accept=".pdf,image/*"
+              hidden
+              ref={fileRef}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setSelectedFile(file);
+                }
+              }}
+            />
             <button
               type="button"
               aria-label="Attach file"
               className="flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-white/[0.05] border border-transparent hover:border-white/[0.06] transition-all duration-150 bg-transparent cursor-pointer"
+              onClick={() => fileRef.current?.click()}
             >
               <Paperclip size={16} />
             </button>

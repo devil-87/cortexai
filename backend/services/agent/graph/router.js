@@ -48,6 +48,18 @@ export const router = async (state) => {
     return { ...state, agent: state.agent };
   }
 
+  // FIXED: state.file is undefined when no file is attached, so use ?.
+  // instead of reading .mimetype directly (that caused the crash)
+  const mime = state.file?.mimetype;
+
+  if (mime === "application/pdf") {
+    return { ...state, agent: "pdfRag" };
+  }
+
+  if (mime?.startsWith("image/")) {
+    return { ...state, agent: "imageAnalyzer" };
+  }
+
   const llm = await getModel("router");
 
   // Long prompts add cost, not accuracy: the start of the message is enough to route
