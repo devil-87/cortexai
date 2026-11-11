@@ -1,7 +1,17 @@
+import crypto from "crypto"; // CHANGED: randomUUID is not global in every Node version
 import { getAuth } from "firebase-admin/auth";
 import { app } from "../config/firebase.js";
 import User from "../models/user.model.js";
 import redis from "../../../shared/redis/redis.js";
+
+// CHANGED: the backend is served over HTTPS (CloudFront) and the frontend lives
+// on a different domain, so the cookie needs secure:true and sameSite:"none"
+const cookieOptions = {
+  httpOnly: true,
+  secure: true,
+  sameSite: "none",
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
 
 export const login = async (req, res) => {
   try {
@@ -19,29 +29,25 @@ export const login = async (req, res) => {
       });
     }
 
-    const sessionId=crypto.randomUUID()
-await redis.set(`user-session-${user?._id}`,
-    sessionId
-,"EX",7*24*60*60)
-await redis.set(`session-${sessionId}`,JSON.stringify({
-    userId:user._id,
-    name:user.name,
-    email:user.email,
-    avatar:user.avatar,
-    plan:user.plan,
-    credits:user.credits,
-    totalCredits:user.totalCredits,
-    planExpiresAt:user.planExpiresAt
-}),"EX",7*24*60*60)
+    const sessionId = crypto.randomUUID();
+    await redis.set(`user-session-${user?._id}`, sessionId, "EX", 7 * 24 * 60 * 60);
+    await redis.set(
+      `session-${sessionId}`,
+      JSON.stringify({
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        plan: user.plan,
+        credits: user.credits,
+        totalCredits: user.totalCredits,
+        planExpiresAt: user.planExpiresAt,
+      }),
+      "EX",
+      7 * 24 * 60 * 60,
+    );
 
-
-
-    res.cookie("session", sessionId, {
-      httpOnly: true,
-      secure: false,
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("session", sessionId, cookieOptions); // CHANGED
 
     return res.status(200).json(user);
   } catch (error) {
@@ -55,85 +61,106 @@ export const logOut = async (req, res) => {
     if (sessionId) {
       await redis.del(`session-${sessionId}`);
     }
-    res.clearCookie("session");
+    // CHANGED: clearCookie needs the same secure/sameSite options, or the browser keeps the cookie
+    res.clearCookie("session", {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+    });
     return res.status(200).json({ message: "Logged out successfully" });
   } catch (error) {
     return res.status(500).json({ message: `Logout error ${error}` });
   }
-}
+};
 
 export const updateUserPayment = async (req, res) => {
-    try {
-        const {plan, credits, userId} = req.body
-        const user = await User.findById(userId)
-        if (!user) {
-            return res.status(404).json({message: "User not found"})
-        }
-        user.plan = plan
-        user.credits += credits
-        user.totalCredits += credits
-        user.planExpiresAt = new Date(Date.now() + 30*24*60*60*1000)
-        await user.save()
-
-        const sessionId= await redis.set(`user-session-${user?._id}`)
-        await redis.set(`session-${sessionId}`, JSON.stringify({
-            userId: user._id,
-            name: user.name,
-            email: user.email,
-            avatar: user.avatar,
-            plan: user.plan,
-            credits: user.credits,
-            totalCredits: user.totalCredits,
-            planExpiresAt: user.planExpiresAt
-        }), "EX", 7*24*60*60)
-
-        return res.status(200).json({success: true})
-        
-    } catch (error) {
-        return res.status(500).json({message: `update user payment error ${error}`})
+  try {
+    const { plan, credits, userId } = req.body;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
     }
-}
+    user.plan = plan;
+    user.credits += credits;
+    user.totalCredits += credits;
+    user.planExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    await user.save();
+
+    // CHANGED: this was redis.set(...) with no value, which returned "OK" and broke the session key.
+    // It must be redis.get(...) to read the user's current session id.
+    const sessionId = await redis.get(`user-session-${user?._id}`);
+    if (sessionId) {
+      await redis.set(
+        `session-${sessionId}`,
+        JSON.stringify({
+          userId: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          plan: user.plan,
+          credits: user.credits,
+          totalCredits: user.totalCredits,
+          planExpiresAt: user.planExpiresAt,
+        }),
+        "EX",
+        7 * 24 * 60 * 60,
+      );
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ message: `update user payment error ${error}` });
+  }
+};
 
 export const deductCredits = async (req, res) => {
-    try {
-        const { userId, agent } = req.body
+  try {
+    const { userId, agent } = req.body;
 
-        const COST = {
-            chat: 1,
-            search: 5,
-            coding: 10,
-            pdf: 10,
-            ppt: 10,
-            vision: 10
-        };
+    const COST = {
+      chat: 1,
+      search: 5,
+      coding: 10,
+      pdf: 10,
+      ppt: 10,
+      vision: 10,
+    };
 
-        const user = await User.findById(userId)
+    const user = await User.findById(userId);
 
     if (!user) {
-        return res.status(400).json({ message: "user not found" })
+      return res.status(400).json({ message: "user not found" });
     }
 
-    const requiredCredits = COST[agent] || 1
+    const requiredCredits = COST[agent] || 1;
     if (user.credits < requiredCredits) {
-        return res.status(400).json({ message: "Not enough credits." })
+      return res.status(400).json({ message: "Not enough credits." });
     }
-    user.credits -= requiredCredits
-    await user.save()
-    const sessionId = await redis.get(`user-session-${user?._id}`)
-    console.log("sessionId", sessionId)
-    await redis.set(`session-${sessionId}`, JSON.stringify({
-        userId: user._id,
-        name: user.name,
-        email: user.email,
-        avatar: user.avatar,
-        plan: user.plan,
-        credits: user.credits,
-        totalCredits: user.totalCredits,
-        planExpiresAt: user.planExpiresAt
-    }), "EX", 7 * 24 * 60 * 60)
+    user.credits -= requiredCredits;
+    await user.save();
 
-    return res.status(200).json({ success: true ,credits:user.credits})
-} catch (error) {
-  return res.status(500).json({message: `deduct credits error ${error}`})
-}
-}
+    const sessionId = await redis.get(`user-session-${user?._id}`);
+    console.log("sessionId", sessionId);
+    if (sessionId) {
+      await redis.set(
+        `session-${sessionId}`,
+        JSON.stringify({
+          userId: user._id,
+          name: user.name,
+          email: user.email,
+          avatar: user.avatar,
+          plan: user.plan,
+          credits: user.credits,
+          totalCredits: user.totalCredits,
+          planExpiresAt: user.planExpiresAt,
+        }),
+        "EX",
+        7 * 24 * 60 * 60,
+      );
+    }
+
+    return res.status(200).json({ success: true, credits: user.credits });
+  } catch (error) {
+    return res.status(500).json({ message: `deduct credits error ${error}` });
+  }
+};

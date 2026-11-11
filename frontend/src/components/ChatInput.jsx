@@ -1,5 +1,6 @@
 import {
   Mic,
+  MicOff,
   Paperclip,
   Send,
   Zap,
@@ -70,6 +71,10 @@ const ChatInput = () => {
   const { messages } = useSelector((state) => state.message);
   const [selectedFile, setSelectedFile] = useState(null);
   const fileRef = useRef(null);
+  // ADDED (mic): listening state, the recognition object, and the text typed before the mic was pressed
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const baseTextRef = useRef("");
   // No chat needs to be selected: a new one is created automatically
   const canSend = value.trim() && !sending;
 
@@ -80,6 +85,54 @@ const ChatInput = () => {
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
+
+  // ADDED (mic): set up speech recognition once (works in Chrome / Edge)
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US"; // use "hi-IN" for Hindi
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    // Join everything heard so far and put it after the text that was already typed
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setValue((baseTextRef.current + " " + transcript).trim());
+    };
+
+    recognition.onend = () => setListening(false);
+    recognition.onerror = () => setListening(false);
+
+    recognitionRef.current = recognition;
+
+    return () => recognition.abort();
+  }, []);
+
+  // ADDED (mic): start or stop listening
+  const toggleMic = () => {
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in this browser. Use Chrome or Edge.");
+      return;
+    }
+    if (listening) {
+      recognitionRef.current.stop();
+      setListening(false);
+    } else {
+      baseTextRef.current = value; // keep what was already typed
+      try {
+        recognitionRef.current.start();
+        setListening(true);
+      } catch (err) {
+        console.error("Mic could not start:", err);
+      }
+    }
+  };
 
   // ADDED: reload the user from the server (used when a request failed after
   // credits may already have been spent, so the screen shows the real balance)
@@ -96,6 +149,13 @@ const ChatInput = () => {
 
   const handleSendMessage = async () => {
     if (!canSend) return;
+
+    // ADDED (mic): stop listening so no late words refill the box after sending
+    if (listening) {
+      recognitionRef.current?.abort();
+      setListening(false);
+    }
+    baseTextRef.current = "";
 
     const prompt = value.trim();
     setValue("");
@@ -273,7 +333,7 @@ const ChatInput = () => {
         {/* 16px on phones stops iOS from zooming in on focus */}
         <textarea
           ref={textareaRef}
-          placeholder="Ask Anything..."
+          placeholder={listening ? "Listening..." : "Ask Anything..."}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
           value={value}
@@ -303,12 +363,18 @@ const ChatInput = () => {
             >
               <Paperclip size={16} />
             </button>
+            {/* CHANGED (mic): now has onClick, and turns red while listening */}
             <button
               type="button"
-              aria-label="Voice input"
-              className="flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-lg text-slate-600 hover:text-slate-400 hover:bg-white/[0.05] border border-transparent hover:border-white/[0.06] transition-all duration-150 bg-transparent cursor-pointer"
+              aria-label={listening ? "Stop voice input" : "Start voice input"}
+              onClick={toggleMic}
+              className={`flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-lg border transition-all duration-150 cursor-pointer ${
+                listening
+                  ? "text-red-400 bg-red-500/10 border-red-500/30 animate-pulse"
+                  : "text-slate-600 hover:text-slate-400 hover:bg-white/[0.05] border-transparent hover:border-white/[0.06] bg-transparent"
+              }`}
             >
-              <Mic size={16} />
+              {listening ? <MicOff size={16} /> : <Mic size={16} />}
             </button>
           </div>
           <button
