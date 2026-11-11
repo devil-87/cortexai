@@ -38,22 +38,22 @@ jobs:
         run: |
           set -euo pipefail
 
-          # format: folder-name:ecs-service-name
+          # format: ecr-name|dockerfile-path|ecs-service-name
           SERVICES=(
-            "gateway:${GATEWAY_SERVICE}"
-            "auth:${AUTH_SERVICE}"
-            "chat:${CHAT_SERVICE}"
-            "agent:${AGENT_SERVICE}"
-            "billing:${BILLING_SERVICE}"
+            "gateway|backend/gateway/Dockerfile|${GATEWAY_SERVICE}"
+            "auth|backend/services/auth/Dockerfile|${AUTH_SERVICE}"
+            "chat|backend/services/chat/Dockerfile|${CHAT_SERVICE}"
+            "agent|backend/services/agent/Dockerfile|${AGENT_SERVICE}"
+            "billing|backend/services/billing/Dockerfile|${BILLING_SERVICE}"
           )
 
-          # 1) Build + push all images
+          # 1) Build + push all images (build context = backend)
           for entry in "${SERVICES[@]}"; do
-            NAME="${entry%%:*}"
+            IFS='|' read -r NAME DOCKERFILE SVC <<< "${entry}"
             IMAGE="${REGISTRY}/backend-${NAME}"
             echo "=== Building ${NAME} ==="
             docker build \
-              -f "backend/${NAME}/Dockerfile" \
+              -f "${DOCKERFILE}" \
               -t "${IMAGE}:latest" \
               -t "${IMAGE}:${GITHUB_SHA}" \
               backend
@@ -63,8 +63,8 @@ jobs:
 
           # 2) Force new deployment on all ECS services
           for entry in "${SERVICES[@]}"; do
-            SVC="${entry#*:}"
-            echo "=== Redeploying ${SVC} ==="
+            IFS='|' read -r NAME DOCKERFILE SVC <<< "${entry}"
+            echo "=== Redeploying ${NAME} ==="
             aws ecs update-service \
               --cluster "${ECS_CLUSTER}" \
               --service "${SVC}" \
